@@ -66,4 +66,21 @@ M1A   0.027771      5         A       1      M  P155_HUMAN      2.298782 -3.1652
 `gene` is the provided name of the protein filled with the `sequence_name` argument <br />
 `adj_score` is the probability of each of the tokens filling the masked position when comparing the raw `score` to only the 20 canonical amino acid probabilites <br />
 `s1` is the variant effect prediction score <br />
-`site_entropy` is the Shannon Entropy of the position. This will be the same value for all rows with the same `aa_pos`
+`site_entropy` is the Shannon Entropy of the position. This will be the same value for all rows with the same `aa_pos`<br /> <br />
+
+
+Running `example.py` should take only a few secconds on a machine where cuda is available. 
+
+
+--- 
+
+Package requirements to run ``example.py`` 
+
+```
+pandas==1.5.2
+numpy==1.23.4
+trasnformers>=4.25.1
+torch>=1.12.1
+```
+
+
