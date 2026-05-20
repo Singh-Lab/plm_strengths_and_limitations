@@ -81,6 +81,7 @@ pandas==1.5.2
 numpy==1.23.4
 trasnformers>=4.25.1
 torch>=1.12.1
+sequence-models==1.8.0
 ```
 
 
