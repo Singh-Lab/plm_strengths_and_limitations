@@ -9,4 +9,8 @@ Source files needed to build databases :
 
 
 
+Running homolog searches requires building the database from a fasta file 
 
+```console
+makeblastdb -in /path/to/fasta/uniref50_042021.fasta -dbtype prot -title uniref50_042021 -out uniref50_042021
+```
