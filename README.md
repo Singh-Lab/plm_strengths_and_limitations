@@ -71,5 +71,3 @@ M1A   0.027771      5         A       1      M  P155_HUMAN      2.298782 -3.1652
 
 Running `example.py` should take only a few secconds on a machine where cuda is available. 
 
-
-
