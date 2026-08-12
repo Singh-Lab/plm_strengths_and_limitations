@@ -72,16 +72,4 @@ M1A   0.027771      5         A       1      M  P155_HUMAN      2.298782 -3.1652
 Running `example.py` should take only a few secconds on a machine where cuda is available. 
 
 
---- 
-
-Package requirements to run ``example.py`` 
-
-```
-pandas==1.5.2
-numpy==1.23.4
-trasnformers>=4.25.1
-torch>=1.12.1
-sequence-models==1.8.0
-```
-
 
