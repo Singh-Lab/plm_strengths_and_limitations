@@ -1,17 +1,20 @@
-import os
-import sys
+import re
 import warnings
 from argparse import Namespace
 from pathlib import Path
 import pandas as pd
 import numpy as np
-pd.options.mode.chained_assignment = None  
+pd.options.mode.chained_assignment = None
 import torch
-# import esm
-import time
-# from esm.model.esm2 import ESM2
+import esm
+from esm.model.esm2 import ESM2
 import copy
 
+torch.serialization.add_safe_globals([Namespace])
+
+# The direct-.pt-checkpoint loading code below (load_model_and_alphabet_core,
+# _load_model_and_alphabet_core_v1/v2, load_model_and_alphabet_local, and
+# has_emb_layer_norm_before) is adapted from facebookresearch/esm's esm/pretrained.py
 
 def _has_regression_weights(model_name):
     """Return whether we expect / require regression weights;
@@ -30,8 +33,13 @@ def load_model_and_alphabet(model_name):
     
 
 
+def has_emb_layer_norm_before(model_state):
+    """Determine whether layer norm needs to be applied before the encoder"""
+    return any(k.startswith("emb_layer_norm_before") for k, param in model_state.items())
+
+
 def _load_model_and_alphabet_core_v1(model_data):
-    import esm  # since esm.inverse_folding is imported below, you actually have to re-import esm here
+    import esm  # since esm.inverse_folding is imported below
 
     alphabet = esm.Alphabet.from_architecture(model_data["args"].arch)
 
@@ -107,6 +115,29 @@ def _load_model_and_alphabet_core_v1(model_data):
     )
 
     return model, alphabet, model_state
+
+
+def _load_model_and_alphabet_core_v2(model_data):
+    def upgrade_state_dict(state_dict):
+        """Removes prefixes 'model.encoder.sentence_encoder.' and 'model.encoder.'."""
+        prefixes = ["encoder.sentence_encoder.", "encoder."]
+        pattern = re.compile("^" + "|".join(prefixes))
+        state_dict = {pattern.sub("", name): param for name, param in state_dict.items()}
+        return state_dict
+
+    cfg = model_data["cfg"]["model"]
+    state_dict = model_data["model"]
+    state_dict = upgrade_state_dict(state_dict)
+    alphabet = esm.data.Alphabet.from_architecture("ESM-1b")
+    model = ESM2(
+        num_layers=cfg.encoder_layers,
+        embed_dim=cfg.encoder_embed_dim,
+        attention_heads=cfg.encoder_attention_heads,
+        alphabet=alphabet,
+        token_dropout=cfg.token_dropout,
+    )
+    return model, alphabet, state_dict
+
 
 def entropy(lst):
     e = list(map(lambda x: x * np.log2(x), lst))
@@ -210,6 +241,12 @@ def get_iterative_masked_seqeunce(model, alphabet, batch_converter, sequence, se
     for gname in input_df["id"].values:
         dt = [(gname + '_WT',input_df[input_df.id==gname].seq.values[0])]
 
+    # BOS is always prepended; EOS is only appended for some architectures
+    # (e.g. ESM-1b/roberta_large and ESM-2 via the "ESM-1b" alphabet) -- protein_bert_base
+    # ESM-1 checkpoints have no EOS. Slice both ends off using the alphabet's own flag
+    # rather than assuming "no EOS" universally.
+    end_idx = -1 if alphabet.append_eos else None
+
     res_vals = []
     for i in range(0, len(sequence)):
         ref_aa = sequence[i]
@@ -218,14 +255,12 @@ def get_iterative_masked_seqeunce(model, alphabet, batch_converter, sequence, se
 
         bt_2 = copy.deepcopy(batch_tokens)
 
-        # one indexed to account for begin token 
+        # one indexed to account for begin token
         bt_2[0, i+1] = alphabet.mask_idx
-        # adapeted from Brandes et al. These versions of esm do not have eos token at the end, final token is just the final aa
-        # beginning token is still special token 
 
         # was cuda in place od device _str
         results = torch.softmax(model(bt_2.to(device_str), repr_layers=[34], return_contacts=False)["logits"], dim =-1)
-        results = pd.DataFrame(results[0,:,:].cpu().detach().numpy()[1:,:], columns=alphabet.all_toks, index=list(input_df[input_df.id==gname].seq.values[0])).T
+        results = pd.DataFrame(results[0,:,:].cpu().detach().numpy()[1:end_idx,:], columns=alphabet.all_toks, index=list(input_df[input_df.id==gname].seq.values[0])).T
         results.columns = [j.split('.')[0]+' '+str(i+1) for i,j in enumerate(results.columns)]
 
         col_of_interest = ref_aa + " " + str(i + 1)
@@ -246,3 +281,155 @@ def get_iterative_masked_seqeunce(model, alphabet, batch_converter, sequence, se
 
     df_out = pd.DataFrame(res_vals)
     return df_out
+
+
+def get_iterative_masked_carp(model, collater, sequence, seq_name, device_str="cuda"):
+    """Ported from iteratively_mask_sequences.py (iteratively_mask_sequence),
+    parameterized instead of relying on module globals."""
+    CAN_AAS = 'ACDEFGHIKLMNPQRSTVWY'
+    AMB_AAS = 'BZX'
+    OTHER_AAS = 'JOU'
+    ALL_AAS = CAN_AAS + AMB_AAS + OTHER_AAS
+    STOP = '*'
+    GAP = '-'
+    MASK = '#'
+    START = '@'
+    SPECIALS = STOP + GAP + MASK + START
+    PROTEIN_ALPHABET = ALL_AAS + SPECIALS
+
+    index_to_char = {i: c for i, c in enumerate(PROTEIN_ALPHABET)}
+
+    results = []
+    for i in range(len(sequence)):
+        aa_pos = i + 1
+
+        seq_2 = list(sequence)
+        ref_aa = seq_2[i]
+        seq_2[i] = MASK
+        seq_2 = "".join(seq_2)
+
+        x = collater([[seq_2]])[0].to(device_str)
+        with torch.no_grad():
+            output = model(x, logits=True)
+        probs = torch.softmax(output["logits"], dim=-1)
+        wanted_col = probs[0, i, :].cpu().detach().numpy()
+
+        for alph_idx, prob in enumerate(wanted_col):
+            results.append({
+                "score": prob,
+                "token": alph_idx,
+                "token_str": index_to_char[alph_idx],
+                "aa_pos": aa_pos,
+                "ref_aa": ref_aa,
+                "gene": seq_name,
+            })
+
+    return pd.DataFrame(results)
+
+
+def get_iterative_masked_progen2(model, tokenizer, sequence, seq_name, device_str="cuda", verbose=False):
+    """Ported from progen2_iteratively_mask_sequences.py.
+
+    NOTE: ProGen2 is a causal (autoregressive) LM, not a masked LM. Each position's
+    score distribution is computed from only the *preceding* sequence context (the
+    model has never seen anything after that position) -- this is not the same thing
+    as ESM/CARP/ProtT5's bidirectional mask-infilling, even though the output shape
+    and downstream site-entropy math are the same.
+    """
+    vocab = tokenizer.get_vocab()
+    id_to_token = {v: k for k, v in vocab.items()}
+    # 2 tokens short of the logits shape for the medium/large/bfd checkpoints
+    id_to_token[30] = "<MISSING_1>"
+    id_to_token[31] = "<MISSING_2>"
+
+    results = []
+    for idx in range(len(sequence)):
+        aa_pos = idx + 1
+        wt_aa = sequence[idx]
+
+        prompt = "1" + sequence[:idx]
+        input_ids = torch.tensor(tokenizer.encode(prompt).ids).to(device_str)
+        with torch.no_grad():
+            model_output = model(input_ids, output_hidden_states=True)
+        next_token_logits = model_output.logits[-1, :]
+        next_token_probs = torch.softmax(next_token_logits, dim=-1).detach().cpu().numpy()
+
+        if verbose:
+            print(seq_name, aa_pos, "/", len(sequence))
+
+        for i, token_prob in enumerate(next_token_probs):
+            if i > 31:
+                continue
+            results.append({
+                "score": token_prob,
+                "token": i,
+                "token_str": id_to_token[i],
+                "aa_pos": aa_pos,
+                "ref_aa": wt_aa,
+                "gene": seq_name,
+            })
+
+    return pd.DataFrame(results)
+
+
+def get_iterative_masked_prott5(model, tokenizer, sequence, seq_name, device_str="cuda", verbose=False):
+    """Ported from iteratively_mask_sequence.py.
+
+    Uses T5's span-corruption objective (<extra_id_0>) rather than a single [MASK]
+    token: the masked position is replaced with the sentinel, and the decoder is fed
+    the correct prefix of preceding residues to predict the next (masked) token.
+    """
+    decoder_start_id = model.config.decoder_start_token_id
+    extra0 = "<extra_id_0>"
+
+    amino_acids = list("ACDEFGHIKLMNPQRSTVWYX")
+    aa_to_id = {}
+    for aa in amino_acids:
+        ids = tokenizer.encode(" " + aa, add_special_tokens=False)
+        if len(ids) != 1:
+            raise RuntimeError(f"AA {aa} not 1 token")
+        aa_to_id[aa] = ids[0]
+
+    # matches the original script: non-canonical AAs are folded into X
+    clean_seq = sequence.replace("U", "X").replace("Z", "X").replace("O", "X").replace("B", "X")
+
+    results = []
+    with torch.no_grad():
+        for idx in range(len(clean_seq)):
+            aa_pos = idx + 1
+            wt_aa = clean_seq[idx]
+
+            if verbose:
+                print(seq_name, aa_pos, "/", len(clean_seq))
+
+            toks = list(clean_seq)
+            toks[idx] = extra0
+            enc_text = " ".join(toks)
+            enc = tokenizer(enc_text, return_tensors="pt", add_special_tokens=True)
+            enc = {k: v.to(device_str) for k, v in enc.items()}
+
+            prefix_ids = [aa_to_id[aa] for aa in clean_seq[:idx]]
+            dec_in = torch.tensor([[decoder_start_id] + prefix_ids], device=device_str)
+
+            out = model(
+                input_ids=enc["input_ids"],
+                attention_mask=enc.get("attention_mask", None),
+                decoder_input_ids=dec_in,
+            )
+            mask_logits = out["logits"][0, -1]
+            probs = torch.softmax(mask_logits, dim=-1).detach().cpu().numpy()
+
+            for i, token_prob in enumerate(probs):
+                token_str = tokenizer.convert_ids_to_tokens(i)
+                if len(token_str) == 2:  # e.g. "_M" -> "M"
+                    token_str = token_str[1:]
+                results.append({
+                    "score": token_prob,
+                    "token": i,
+                    "token_str": token_str,
+                    "aa_pos": aa_pos,
+                    "ref_aa": wt_aa,
+                    "gene": seq_name,
+                })
+
+    return pd.DataFrame(results)
