@@ -50,13 +50,15 @@ Available through both `get_iterative_masked_df` (masking) and `get_embedding` (
 
 | Family | `model_key` | Extra args needed |
 |---|---|---|
-| ESM (HuggingFace) | `esm_1b`, `esm_1v`, `esm_2_3B`, `esm_2_650M`, `esm_2_150M`, `esm_2_35M`, `esm_2_8M` | — |
+| ESM (HuggingFace) | `esm_1b`, `esm_1v`, `esm_2_8M`, `esm_2_35M`, `esm_2_150M`, `esm_2_650M`, `esm_2_3B` | — |
 | ESM (HuggingFace) | `esm_2_15B` | requires local cache (`huggingface_cache_dir`) — too large (~60GB) to auto-download, and needs a GPU with enough memory to actually run |
-| ProtBERT (HuggingFace) | `protbert`, `protbert_bfd` | — |
+| ProtBERT (HuggingFace) | `protbert`, `protbert_bfd`* | — |
 | ESM (direct `.pt` loading) | any key + a `.pt` path | `direct_loading_model_path` — supports both ESM-1 and ESM-2 architecture checkpoints |
-| ProtT5 (HuggingFace) | `prott5_xl`, `prott5_xl_bfd` | — |
-| CARP | `carp_600k`, `carp_38M`, `carp_76M`, `carp_640M` | optional `carp_model_path` to skip auto-download |
+| ProtT5 (HuggingFace) | `prott5_xl`, `prott5_xl_bfd`* | — |
+| CARP | `carp_600k`*, `carp_38M`, `carp_76M`, `carp_640M` | optional `carp_model_path` to skip auto-download |
 | ProGen2 | `progen2_medium`, `progen2_large`, `progen2_bfd` | `progen_model_dir`, `progen_code_dir` (see below) |
+
+\* Not used in the manuscript's analysis but supported here.
 
 ---
 
