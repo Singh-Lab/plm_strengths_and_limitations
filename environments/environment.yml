@@ -1,0 +1,19 @@
+# Create with: conda env create -f environment.yml
+name: plm_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - torch>=2.6
+      - transformers==4.44.2
+      - fair-esm==2.0.0
+      - huggingface-hub==0.24.7
+      - numpy==2.3.5
+      - pandas==3.0.0
+      - biopython==1.87
+      - scikit-learn==1.8.0
+      - sequence-models==1.8.0
+      - accelerate
+      - sentencepiece
