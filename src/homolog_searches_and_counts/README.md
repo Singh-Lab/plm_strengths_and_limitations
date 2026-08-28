@@ -5,7 +5,7 @@ Information on this release can be found [here](https://www.ncbi.nlm.nih.gov/boo
 This version of BLAST+ executables can be downloaded [here](https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/) along with other versions. 
 
 
-Source files needed to build databases : 
+Source files needed to build databases for UR50/90/100 are uploaded in the zenodo repository. 
 
 
 
