@@ -1,12 +1,15 @@
 ## Repository for Systematic evaluation of protein language models highlights strengths and limitations
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![DOI](https://zenodo.org/badge/DOI/TBD/zenodo.TBD.svg)](https://doi.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22046470.svg)](https://doi.org/10.5281/zenodo.22046470)
 
 
 
 
-### Downloads
-MAPLE-based selections for missense variant impacts throughout the human proteome available at: 
-https://drive.google.com/file/d/11gXT_6FRHxsYpvBD5UdMtPAxytrF2Yj0/view?usp=sharing
+### Data and Downloads
+Datasets and supporting files are available through the [Zenodo repository](https://doi.org/10.5281/zenodo.22046470).
+
+* Python pickle objects containing sequence embeddings used to train downstream models for predicting protein–protein interaction (PPI) affinity, subcellular localization (SCL), and protein solubility.
+* FASTA source files used to construct the sequence databases for BLAST-based homolog searches.
+* Human proteome selections generated using the MAPLE strategy with gamma = 1.0.
 
 ---
 
